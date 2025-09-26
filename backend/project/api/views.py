@@ -5,6 +5,9 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
+from django.http import JsonResponse
+from transformers import pipeline
+from .rag import generate_answer
 import json
 from django.http import JsonResponse
 from django.contrib.auth.models import User
@@ -14,6 +17,7 @@ from torchvision import transforms
 from .cnn import PneumoniaCNN
 
 MODEL_PATH = "/Users/pradippokhrel/Desktop/Pneumonia/backend/project/model.pth"
+qa_pipeline = pipeline("text-generation",model="gpt2")
 
 # --- Load model ---
 model = None
@@ -50,6 +54,16 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
+
+
+def rag_query(request):
+    query = request.GET.get("query")
+    if not query:
+        return JsonResponse({"error": "Query parameter is required."}, status=400)
+    context = "Pneumonia is a lung infection."
+    result = qa_pipeline(f"Q: {query}\nContext: {context}\nAnswer:", max_length=200, num_return_sequences=1)
+    answer = result[0]['generated_text'].split("Answer:")[-1].strip()
+    return JsonResponse({"answer": answer})
 
 @api_view(['POST'])
 def createUser(request):

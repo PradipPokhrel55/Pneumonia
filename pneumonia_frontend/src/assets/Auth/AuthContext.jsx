@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
         setAuthTokens(data);
         setUser(safeDecode(data.access));
         localStorage.setItem("authTokens", JSON.stringify(data));
-        navigate("/predict");
+        navigate("/chat");
       } else {
         alert("Login failed! Missing tokens.");
       }

@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/973577438642074843/eb5ce12e35dd49ad9e1d37eba9839bfb/artifacts
+end_time: 1758548871582
+entry_point_name: ''
+experiment_id: '973577438642074843'
+lifecycle_stage: active
+run_id: eb5ce12e35dd49ad9e1d37eba9839bfb
+run_name: stylish-hen-874
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1758548871568
+status: 4
+tags: []
+user_id: pradippokhrel

@@ -1,0 +1,14 @@
+artifact_uri: mlflow-artifacts:/973577438642074843/9ee5df4dbb7242579bce6dfbf060ead8/artifacts
+end_time: 1758549089137
+entry_point_name: ''
+experiment_id: '973577438642074843'
+lifecycle_stage: active
+run_id: 9ee5df4dbb7242579bce6dfbf060ead8
+run_name: fortunate-bug-465
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1758549083680
+status: 3
+tags: []
+user_id: pradippokhrel

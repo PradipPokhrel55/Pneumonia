@@ -1,11 +1,10 @@
 import React, { createContext, useState, useEffect } from "react";
-import { jwtDecode } from "jwt-decode"; // ✅ Correct import for named export
+import { jwtDecode } from "jwt-decode";
 import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../../config/api";
 
 const AuthContext = createContext();
 export default AuthContext;
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 export const AuthProvider = ({ children }) => {
   const [authTokens, setAuthTokens] = useState(() => {
@@ -76,9 +75,7 @@ export const AuthProvider = ({ children }) => {
 
   const updateToken = async () => {
     if (!authTokens?.refresh) {
-      console.warn("No refresh token found, logging out...");
-      logoutUser();
-      setLoading(false); // Reset loading state
+      setLoading(false);
       return;
     }
 
@@ -102,9 +99,10 @@ export const AuthProvider = ({ children }) => {
           logoutUser();
           return;
         }
-        setAuthTokens(data);
+        const updatedTokens = { ...authTokens, access: data.access };
+        setAuthTokens(updatedTokens);
         setUser(decodedUser);
-        localStorage.setItem("authTokens", JSON.stringify(data));
+        localStorage.setItem("authTokens", JSON.stringify(updatedTokens));
       } else {
         logoutUser();
       }
@@ -112,7 +110,7 @@ export const AuthProvider = ({ children }) => {
       console.error("Token refresh error:", err);
       logoutUser();
     } finally {
-      setLoading(false); // ✅ Always reset loading
+      setLoading(false);
     }
   };
 
@@ -122,7 +120,7 @@ export const AuthProvider = ({ children }) => {
     }
     const interval = setInterval(() => {
       if (authTokens) updateToken();
-    }, 1000 * 60 * 4); // every 4 mins
+    }, 1000 * 60 * 4);
 
     return () => clearInterval(interval);
   }, [authTokens, loading]);
@@ -133,3 +131,7 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
+
+
+
+

@@ -2,7 +2,8 @@ import React, { useState, useContext } from "react";
 import axios from "axios";
 import AuthContext from "../Auth/AuthContext";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom"; 
+import { useNavigate } from "react-router-dom";
+import { API_BASE_URL } from "../../config/api";
 
 const PneumoniaPredict = () => {
   const [file, setFile] = useState(null);
@@ -38,7 +39,7 @@ const PneumoniaPredict = () => {
     try {
       setLoading(true);
       const response = await axios.post(
-        "http://localhost:8000/api/predict/",
+        `${API_BASE_URL}/api/predict/`,
         formData,
         {
           headers: {

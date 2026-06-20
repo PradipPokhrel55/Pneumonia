@@ -1,34 +1,50 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { motion } from "framer-motion";
-import { useNavigate } from "react-router-dom"; 
+import { useNavigate } from "react-router-dom";
+import AuthContext from "../Auth/AuthContext";
+import { API_BASE_URL } from "../../config/api";
 
 function RAGChat() {
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState("");
-  const navigate = useNavigate(); 
+  const [error, setError] = useState("");
+  const { logoutUser } = useContext(AuthContext);
+  const navigate = useNavigate();
 
   const handleAsk = async () => {
     if (!query.trim()) return;
-    const res = await fetch(
-      `http://127.0.0.1:8000/api/rag-query/?query=${encodeURIComponent(query)}`
-    );
-    const data = await res.json();
-    setAnswer(data.answer);
-    setQuery(""); // clear input after sending
-  };
 
-  const handleLogout = () => {
-    localStorage.removeItem("authToken");
-    window.location.href = "/login";
+    setError("");
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/rag-query/?query=${encodeURIComponent(query)}`,
+        {
+          headers: {
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+        }
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to get an answer.");
+        return;
+      }
+
+      setAnswer(data.answer || "");
+      setQuery("");
+    } catch (err) {
+      console.error(err);
+      setError("Could not reach the server. Is the backend running?");
+    }
   };
 
   const handlePredictNavigate = () => {
-    navigate("/predict"); 
+    navigate("/predict");
   };
 
   return (
     <div className="relative min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 overflow-hidden flex flex-col">
-      {/* 🔹 Animated background bubbles */}
       <motion.div
         className="absolute -top-10 -left-10 w-72 h-72 bg-blue-200 rounded-full mix-blend-multiply filter blur-2xl opacity-60"
         animate={{ y: [0, 30, 0], x: [0, 20, 0] }}
@@ -45,7 +61,6 @@ function RAGChat() {
         transition={{ duration: 12, repeat: Infinity, ease: "easeInOut" }}
       />
 
-      {/* 🔹 Left-top Predict button */}
       <button
         onClick={handlePredictNavigate}
         className="fixed top-4 left-4 bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 z-50"
@@ -53,16 +68,17 @@ function RAGChat() {
         Predict
       </button>
 
-      {/* 🔹 Logout button */}
       <button
-        onClick={handleLogout}
+        onClick={logoutUser}
         className="fixed top-4 right-4 bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 z-50"
       >
         Logout
       </button>
 
-      {/* 🔹 Prompt / Answer box */}
       <div className="flex-1 p-6 overflow-auto mt-16">
+        {error && (
+          <p className="mb-4 text-red-600 text-sm font-medium">{error}</p>
+        )}
         {answer && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -76,12 +92,12 @@ function RAGChat() {
         )}
       </div>
 
-      {/* 🔹 Input area (always at bottom) */}
       <div className="w-full p-4 bg-white border-t border-gray-200 flex items-center">
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAsk()}
           placeholder="Type your question..."
           className="flex-1 border p-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400"
         />

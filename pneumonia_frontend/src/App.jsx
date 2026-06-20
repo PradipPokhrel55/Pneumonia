@@ -20,8 +20,7 @@ function App() {
       }/>
       <Route path='/chat' element={
         <ProtectedRoute>
-          <RAGChat />
-          
+          <RAGChat />         
         </ProtectedRoute>
       }/>
     </Routes>

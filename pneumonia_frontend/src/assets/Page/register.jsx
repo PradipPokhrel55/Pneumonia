@@ -1,8 +1,7 @@
 import React, { useState, useContext } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import AuthContext from "../Auth/AuthContext";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+import { API_BASE_URL } from "../../config/api";
 
 const RegisterPage = () => {
   const { loginUser } = useContext(AuthContext);
@@ -75,3 +74,5 @@ const RegisterPage = () => {
 };
 
 export default RegisterPage;
+
+

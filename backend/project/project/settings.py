@@ -1,13 +1,22 @@
+import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-!@&pa(+hb%!_=m7w=(d_mf3&_=i0o5cro9l65by&n-7fxr)5to"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-fallback-key")
+
+# ChromaDB Cloud
+CHROMA_TENANT = os.environ.get("CHROMA_TENANT", "")
+CHROMA_DATABASE = os.environ.get("CHROMA_DATABASE", "")
+CHROMA_API_KEY = os.environ.get("CHROMA_API_KEY", "")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

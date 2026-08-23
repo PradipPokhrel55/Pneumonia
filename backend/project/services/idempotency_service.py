@@ -1,7 +1,10 @@
-import redis
 import json
+import os
 
-r = redis.Redis()
+import redis
+
+
+r = redis.Redis.from_url(os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/0"))
 
 def save_response(key,response):
     r.set(key, json.dumps(response))

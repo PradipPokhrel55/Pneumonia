@@ -3,12 +3,11 @@ from PIL import Image
 from torchvision import transforms
 from ml.cnn import PneumoniaCNN
 import os
-from transformers import pipeline
+from pathlib import Path
 from rest_framework.response import Response
 
 
-MODEL_PATH = "/Users/pradippokhrel/Desktop/Pneumonia/backend/project/model.pth"
-qa_pipeline = pipeline("text-generation",model="gpt2")
+MODEL_PATH = Path(__file__).resolve().parents[1] / "model.pth"
 
 # --- Load model ---
 model = None

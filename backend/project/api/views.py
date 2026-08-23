@@ -10,7 +10,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
 from services.cnn_service import predict_pneumonia
 from services.idempotency_service import get_cached_response, save_response
-from services.rag_service import generate_answer
+from services.rag_service import generate_answer_with_sources
 
 class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
@@ -33,8 +33,12 @@ def rag_query(request):
     query = request.GET.get("query")#yesma url parameter bata query lina milxa jasto ki url ma ?query=your_query lekhako hunxa
     if not query:
         return Response({"error": "Query parameter is required"}, status=400)
-    answer = generate_answer(query)
-    response = {"answer": answer, "cached": False}
+    rag_payload = generate_answer_with_sources(query)
+    response = {
+        "answer": rag_payload["answer"],
+        "citations": rag_payload.get("citations", []),
+        "cached": False,
+    }
     save_response(key, response)
     return JsonResponse(response)
 

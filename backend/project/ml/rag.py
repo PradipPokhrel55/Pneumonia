@@ -1,151 +1,366 @@
-from sentence_transformers import SentenceTransformer
-import faiss
-import numpy as np
+import json
+import math
+import re
+import subprocess
+import tempfile
+from collections import Counter
+from dataclasses import dataclass
+from pathlib import Path
 from threading import Lock
 
-# Documents (kept at module-level as static data)
-docs = [
- 
-    "Pneumonia is an infection that inflames the air sacs in one or both lungs.",
-    "The alveoli may fill with fluid or pus, causing cough, fever, chills, and difficulty breathing.",
-    "Pneumonia can range from mild to life-threatening depending on age, health condition, and infectious agent.",
-    "Pneumonia affects millions of people worldwide every year and is a major cause of death in children and elderly adults.",
-    "The infection may affect one lobe of the lung, multiple lobes, or both lungs entirely.",
+import faiss
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 
-    # Types of Pneumonia
-    "Bacterial pneumonia is commonly caused by Streptococcus pneumoniae and Haemophilus influenzae.",
-    "Viral pneumonia can be caused by influenza virus, RSV, or SARS-CoV-2.",
-    "Fungal pneumonia occurs more often in people with weakened immune systems.",
-    "Community-acquired pneumonia develops outside hospitals or healthcare facilities.",
-    "Hospital-acquired pneumonia occurs 48 hours or more after hospital admission.",
-    "Ventilator-associated pneumonia develops in patients using mechanical ventilators.",
-    "Aspiration pneumonia occurs when food, liquid, saliva, or vomit enters the lungs.",
-    "Walking pneumonia is a mild form of pneumonia commonly caused by Mycoplasma pneumoniae.",
-    "Lobar pneumonia affects a large and continuous area of a lobe of the lung.",
-    "Bronchopneumonia causes patchy inflammation around the bronchi in multiple areas of the lungs.",
 
-    # Causes
-    "Pneumonia can be caused by bacteria, viruses, fungi, or parasites.",
-    "Streptococcus pneumoniae is the most common bacterial cause of pneumonia.",
-    "Influenza viruses can weaken lung defenses and increase pneumonia risk.",
-    "COVID-19 can lead to severe viral pneumonia and acute respiratory distress syndrome.",
-    "Aspiration of gastric contents can introduce bacteria into the lungs.",
-    "People with weakened immunity are more vulnerable to opportunistic fungal infections.",
-    "Smoking damages the natural defense mechanisms of the respiratory tract.",
-    "Air pollution and toxic fumes may increase susceptibility to respiratory infections.",
+PDF_PATH = Path(__file__).resolve().parents[1] / "pneumonia_pdf.pdf"
+OCR_DPI = 220
+PARENT_CHARS = 1500
+CHILD_CHARS = 420
+CHILD_OVERLAP = 80
+TOP_CANDIDATES = 30
 
-    # Symptoms
-    "Symptoms of pneumonia include cough, fever, chills, chest pain, fatigue, and shortness of breath.",
-    "Some patients produce thick yellow, green, or blood-tinged mucus.",
-    "Rapid breathing and rapid heartbeat are common signs of severe pneumonia.",
-    "Older adults may experience confusion or altered mental status instead of fever.",
-    "Children with pneumonia may show poor feeding, irritability, and bluish skin coloration.",
-    "Chest pain often worsens during coughing or deep breathing.",
-    "Severe pneumonia can reduce oxygen levels in the blood.",
-    "Persistent fatigue and weakness may continue even after infection improves.",
 
-    # Risk Factors
-    "Risk factors include age below 2 or above 65, chronic diseases, smoking, and weak immunity.",
-    "Diabetes increases the risk of pneumonia and related complications.",
-    "Chronic obstructive pulmonary disease and asthma increase vulnerability to lung infections.",
-    "Cancer treatments such as chemotherapy can suppress the immune system.",
-    "Alcohol abuse weakens immune defenses and increases aspiration risk.",
-    "Malnutrition can reduce the body's ability to fight infection.",
-    "Long hospital stays increase exposure to antibiotic-resistant bacteria.",
-    "People living in crowded environments are at greater risk of respiratory infections.",
+@dataclass
+class Chunk:
+    chunk_id: str
+    text: str
+    page: int
+    section: str
+    parent_id: str
 
-    # Diagnosis
-    "Diagnosis involves chest X-ray, blood tests, sputum tests, and physical examination.",
-    "Doctors may use pulse oximetry to measure oxygen saturation levels.",
-    "CT scans can provide more detailed images of lung infection.",
-    "Blood cultures may help identify bacteria causing severe pneumonia.",
-    "Sputum culture tests identify pathogens present in mucus from the lungs.",
-    "Arterial blood gas analysis measures oxygen and carbon dioxide levels in the blood.",
-    "Bronchoscopy may be used in complicated or unclear cases.",
-    "Physical examination may reveal crackling sounds in the lungs during breathing.",
 
-    # Treatment
-    "Treatment depends on the cause: antibiotics for bacterial, antivirals for viral, and antifungals for fungal pneumonia.",
-    "Severe pneumonia may require hospitalization and oxygen therapy.",
-    "Patients with respiratory failure may need mechanical ventilation.",
-    "Rest and hydration help support recovery from pneumonia.",
-    "Over-the-counter fever reducers may help control fever and discomfort.",
-    "Antibiotic resistance can make bacterial pneumonia harder to treat.",
-    "Early treatment usually improves outcomes and reduces complications.",
-    "Patients should complete the full course of prescribed antibiotics.",
-
-    # Prevention
-    "Vaccination, good hygiene, and a healthy lifestyle help prevent pneumonia.",
-    "Pneumococcal vaccines protect against common bacterial causes of pneumonia.",
-    "Annual influenza vaccination lowers the risk of viral pneumonia.",
-    "Frequent handwashing reduces the spread of respiratory pathogens.",
-    "Avoiding smoking helps maintain healthy lung function.",
-    "Proper nutrition and regular exercise support immune health.",
-    "Wearing masks during outbreaks can reduce respiratory infection transmission.",
-    "Breastfeeding helps strengthen immunity in infants.",
-
-    # Complications
-    "Complications of pneumonia include respiratory failure, sepsis, lung abscess, and pleural effusion.",
-    "Untreated pneumonia can spread infection into the bloodstream.",
-    "Pleural effusion occurs when fluid accumulates around the lungs.",
-    "Sepsis is a life-threatening response to infection that may damage organs.",
-    "Lung abscesses are pus-filled cavities that may form in infected lung tissue.",
-    "Acute respiratory distress syndrome can develop in severe pneumonia cases.",
-    "Repeated pneumonia infections may cause long-term lung damage.",
-    "Severe complications are more common in elderly and immunocompromised patients.",
-
-    # Recovery and Prognosis
-    "Most healthy individuals recover from mild pneumonia within a few weeks.",
-    "Recovery may take longer in older adults or people with chronic illnesses.",
-    "Fatigue and mild cough can persist after the infection clears.",
-    "Pulmonary rehabilitation may help patients recover lung function after severe pneumonia.",
-    "Follow-up chest imaging may be recommended after severe or persistent pneumonia.",
-    "Early diagnosis and proper treatment significantly improve survival rates.",
-
-    # Special Populations
-    "Children under five years old are particularly vulnerable to pneumonia.",
-    "Elderly patients often experience more severe symptoms and complications.",
-    "Immunocompromised individuals may develop unusual or opportunistic pneumonia infections.",
-    "Pregnant women with pneumonia require careful monitoring to protect both mother and baby.",
-    "People with HIV/AIDS have increased risk of Pneumocystis jirovecii pneumonia.",
-
-    # Medical and Biological Information
-    "Inflammation in pneumonia interferes with normal oxygen exchange in the lungs.",
-    "White blood cells accumulate in infected lung tissue to fight pathogens.",
-    "Bacterial toxins can damage lung tissue and trigger inflammation.",
-    "Fever during pneumonia is part of the body's immune response to infection.",
-    "Excess mucus production in pneumonia can obstruct airflow in the lungs.",
-    "Hypoxemia refers to low oxygen levels caused by impaired lung function.",
-    "The immune system plays a critical role in controlling respiratory infections.",
-
-    # Emergency Indicators
-    "Seek immediate medical attention if pneumonia causes difficulty breathing or chest pain.",
-    "Bluish lips or fingertips may indicate dangerously low oxygen levels.",
-    "Persistent high fever and confusion can signal severe infection.",
-    "Rapid worsening of symptoms may require emergency hospitalization.",
-    "Children with severe pneumonia may show grunting or chest retractions while breathing."
-]
- # Lazy-loaded heavy objects
 _model = None
 _index = None
+_chunks = []
+_chunk_embeddings = None
+_tfidf_vectorizer = None
+_tfidf_matrix = None
+_bm25_doc_lens = []
+_bm25_tf = []
+_bm25_df = Counter()
+_bm25_avg_len = 0.0
+_tokenized_docs = []
 _lock = Lock()
 
+
+def _tokenize(text: str):
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def _normalize_whitespace(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _is_heading(line: str) -> bool:
+    line = line.strip()
+    if not line or len(line) < 4 or len(line) > 120:
+        return False
+    if line.endswith("."):
+        return False
+    if re.search(r"\d{4}", line):
+        return False
+    alpha = sum(ch.isalpha() for ch in line)
+    if alpha < 3:
+        return False
+    words = line.split()
+    title_like = sum(1 for w in words if w[:1].isupper()) >= max(1, len(words) // 2)
+    all_caps = line == line.upper()
+    return title_like or all_caps
+
+
+def _split_parent_chunks(text: str):
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if not paragraphs:
+        paragraphs = [text]
+    chunks = []
+    current = ""
+    for para in paragraphs:
+        candidate = (current + "\n\n" + para).strip() if current else para
+        if len(candidate) <= PARENT_CHARS:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+        if len(para) <= PARENT_CHARS:
+            current = para
+        else:
+            for i in range(0, len(para), PARENT_CHARS):
+                chunks.append(para[i:i + PARENT_CHARS])
+            current = ""
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _split_child_chunks(text: str):
+    text = _normalize_whitespace(text)
+    if not text:
+        return []
+    result = []
+    start = 0
+    while start < len(text):
+        end = min(len(text), start + CHILD_CHARS)
+        chunk = text[start:end]
+        # Snap to sentence boundary when possible.
+        if end < len(text):
+            period = chunk.rfind(".")
+            if period > CHILD_CHARS * 0.55:
+                end = start + period + 1
+                chunk = text[start:end]
+        result.append(chunk.strip())
+        if end >= len(text):
+            break
+        start = max(start + 1, end - CHILD_OVERLAP)
+    return [c for c in result if c]
+
+
+def _run_cmd(command):
+    return subprocess.run(command, check=True, capture_output=True, text=True)
+
+
+def _get_page_count(pdf_path: Path) -> int:
+    command = [
+        "gs",
+        "-q",
+        "-dNOSAFER",
+        "-dNODISPLAY",
+        "-c",
+        f"({pdf_path}) (r) file runpdfbegin pdfpagecount = quit",
+    ]
+    out = _run_cmd(command).stdout.strip()
+    return int(out)
+
+
+def _ocr_page(pdf_path: Path, page: int) -> str:
+    with tempfile.TemporaryDirectory(prefix="rag_pdf_") as tmp_dir:
+        image_path = Path(tmp_dir) / f"page_{page}.png"
+        gs_command = [
+            "gs",
+            "-q",
+            "-dBATCH",
+            "-dNOPAUSE",
+            "-sDEVICE=pnggray",
+            f"-r{OCR_DPI}",
+            f"-dFirstPage={page}",
+            f"-dLastPage={page}",
+            f"-sOutputFile={image_path}",
+            str(pdf_path),
+        ]
+        _run_cmd(gs_command)
+        tess_command = ["tesseract", str(image_path), "stdout", "--dpi", str(OCR_DPI)]
+        text = _run_cmd(tess_command).stdout
+    return text
+
+
+def _load_or_build_page_text(pdf_path: Path):
+    cache_file = pdf_path.with_suffix(".ocr_cache.json")
+    if cache_file.exists() and cache_file.stat().st_mtime >= pdf_path.stat().st_mtime:
+        with cache_file.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data
+
+    page_count = _get_page_count(pdf_path)
+    pages = []
+    current_section = "General"
+    for page_num in range(1, page_count + 1):
+        raw_text = _ocr_page(pdf_path, page_num)
+        raw_text = raw_text.replace("\x0c", " ")
+        lines = [ln.strip() for ln in raw_text.splitlines() if ln.strip()]
+
+        for line in lines[:3]:
+            if _is_heading(line):
+                current_section = line
+                break
+
+        text = "\n".join(lines)
+        pages.append(
+            {
+                "page": page_num,
+                "section": current_section,
+                "text": text,
+            }
+        )
+
+    with cache_file.open("w", encoding="utf-8") as f:
+        json.dump(pages, f, ensure_ascii=True)
+    return pages
+
+
+def _build_chunks(pdf_path: Path):
+    pages = _load_or_build_page_text(pdf_path)
+    chunks = []
+    child_counter = 0
+    for page_info in pages:
+        page = page_info["page"]
+        section = page_info["section"]
+        text = page_info["text"]
+        if len(text.strip()) < 35:
+            continue
+
+        parent_chunks = _split_parent_chunks(text)
+        for p_idx, parent_text in enumerate(parent_chunks):
+            parent_id = f"p{page}_parent{p_idx}"
+            child_chunks = _split_child_chunks(parent_text)
+            for child_text in child_chunks:
+                chunk = Chunk(
+                    chunk_id=f"c{child_counter}",
+                    text=child_text,
+                    page=page,
+                    section=section,
+                    parent_id=parent_id,
+                )
+                chunks.append(chunk)
+                child_counter += 1
+    return chunks
+
+
+def _build_bm25_state(chunks):
+    global _bm25_doc_lens, _bm25_tf, _bm25_df, _bm25_avg_len, _tokenized_docs
+    _bm25_doc_lens = []
+    _bm25_tf = []
+    _bm25_df = Counter()
+    _tokenized_docs = []
+
+    for chunk in chunks:
+        tokens = _tokenize(chunk.text)
+        tf = Counter(tokens)
+        _tokenized_docs.append(tokens)
+        _bm25_tf.append(tf)
+        _bm25_doc_lens.append(len(tokens))
+        for token in tf.keys():
+            _bm25_df[token] += 1
+
+    _bm25_avg_len = (sum(_bm25_doc_lens) / len(_bm25_doc_lens)) if _bm25_doc_lens else 0.0
+
+
+def _bm25_scores(query: str):
+    if not _chunks:
+        return np.array([], dtype=np.float32)
+    tokens = _tokenize(query)
+    if not tokens:
+        return np.zeros(len(_chunks), dtype=np.float32)
+
+    n_docs = len(_chunks)
+    k1 = 1.2
+    b = 0.75
+    scores = np.zeros(n_docs, dtype=np.float32)
+
+    for i, tf_counter in enumerate(_bm25_tf):
+        dl = _bm25_doc_lens[i]
+        denom_norm = k1 * (1 - b + b * (dl / (_bm25_avg_len + 1e-9)))
+        for token in tokens:
+            tf = tf_counter.get(token, 0)
+            if tf == 0:
+                continue
+            df = _bm25_df.get(token, 0)
+            idf = math.log(1 + ((n_docs - df + 0.5) / (df + 0.5)))
+            score = idf * (tf * (k1 + 1)) / (tf + denom_norm)
+            scores[i] += score
+    return scores
+
+
 def _ensure_loaded():
-    global _model, _index
-    if _model is not None and _index is not None:
+    global _model, _index, _chunks, _chunk_embeddings, _tfidf_vectorizer, _tfidf_matrix
+    if _chunks and ((_model is not None and _index is not None) or (_tfidf_vectorizer is not None and _tfidf_matrix is not None)):
         return
+
     with _lock:
-        if _model is not None and _index is not None:
+        if _chunks and ((_model is not None and _index is not None) or (_tfidf_vectorizer is not None and _tfidf_matrix is not None)):
             return
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
-        embeddings = _model.encode(docs)
-        _index = faiss.IndexFlatL2(embeddings.shape[1])
-        _index.add(np.array(embeddings))
+
+        if not PDF_PATH.exists():
+            raise FileNotFoundError(f"PDF not found: {PDF_PATH}")
+
+        _chunks = _build_chunks(PDF_PATH)
+        if not _chunks:
+            raise RuntimeError("No chunks were built from the pneumonia PDF.")
+
+        texts = [c.text for c in _chunks]
+        try:
+            _model = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
+            embeddings = _model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+            _chunk_embeddings = embeddings.astype(np.float32)
+
+            _index = faiss.IndexFlatL2(_chunk_embeddings.shape[1])
+            _index.add(_chunk_embeddings)
+        except Exception:
+            # Offline fallback when model download is unavailable.
+            _model = None
+            _index = None
+            _chunk_embeddings = None
+            _tfidf_vectorizer = TfidfVectorizer(lowercase=True, token_pattern=r"[a-zA-Z0-9]+")
+            _tfidf_matrix = _tfidf_vectorizer.fit_transform(texts)
+
+        _build_bm25_state(_chunks)
 
 
-def retrieve_docs(query, k=2):
-    """Return top-k docs for query. Loads model/index on first call."""
+def retrieve_chunks(query: str, k: int = 6):
+    """Hybrid retrieve chunks with citations (page, section)."""
     _ensure_loaded()
-    query_vec = _model.encode([query])
-    _, I = _index.search(np.array(query_vec), k)
-    return [docs[i] for i in I[0]]
+
+    dense_k = min(max(k * 8, 20), len(_chunks))
+    dense_rank = {}
+    rerank_scores = {}
+
+    if _model is not None and _index is not None and _chunk_embeddings is not None:
+        query_vec = _model.encode([query], convert_to_numpy=True).astype(np.float32)
+        _, dense_idx = _index.search(query_vec, dense_k)
+        for rank, idx in enumerate(dense_idx[0], start=1):
+            dense_rank[int(idx)] = rank
+    elif _tfidf_vectorizer is not None and _tfidf_matrix is not None:
+        tfidf_query = _tfidf_vectorizer.transform([query])
+        tfidf_scores = (_tfidf_matrix @ tfidf_query.T).toarray().ravel()
+        tfidf_idx = np.argsort(-tfidf_scores)[:dense_k]
+        for rank, idx in enumerate(tfidf_idx, start=1):
+            dense_rank[int(idx)] = rank
+            rerank_scores[int(idx)] = float(tfidf_scores[idx])
+
+    sparse_scores = _bm25_scores(query)
+    sparse_idx = np.argsort(-sparse_scores)[:dense_k]
+    sparse_rank = {int(idx): rank for rank, idx in enumerate(sparse_idx, start=1)}
+
+    candidates = set(dense_rank.keys()) | set(sparse_rank.keys())
+    fused = []
+    for idx in candidates:
+        rank_dense = dense_rank.get(idx, 10_000)
+        rank_sparse = sparse_rank.get(idx, 10_000)
+        rrf = (1.0 / (60 + rank_dense)) + (1.0 / (60 + rank_sparse))
+        fused.append((idx, rrf))
+
+    fused.sort(key=lambda x: x[1], reverse=True)
+    top_candidates = [idx for idx, _ in fused[:TOP_CANDIDATES]]
+
+    if _model is not None and _chunk_embeddings is not None:
+        query_vec = _model.encode([query], convert_to_numpy=True).astype(np.float32)
+        cand_emb = _chunk_embeddings[top_candidates]
+        q = query_vec[0]
+        q_norm = np.linalg.norm(q) + 1e-9
+        doc_norm = np.linalg.norm(cand_emb, axis=1) + 1e-9
+        cos = np.dot(cand_emb, q) / (doc_norm * q_norm)
+        reranked = list(zip(top_candidates, cos))
+    else:
+        reranked = [(idx, rerank_scores.get(idx, 0.0)) for idx in top_candidates]
+
+    reranked.sort(key=lambda x: x[1], reverse=True)
+
+    result = []
+    for idx, score in reranked[:k]:
+        chunk = _chunks[idx]
+        result.append(
+            {
+                "text": chunk.text,
+                "page": chunk.page,
+                "section": chunk.section,
+                "chunk_id": chunk.chunk_id,
+                "parent_id": chunk.parent_id,
+                "score": float(score),
+            }
+        )
+    return result
+
+
+def retrieve_docs(query: str, k: int = 3):
+    """Backward-compatible helper that returns only text chunks."""
+    return [c["text"] for c in retrieve_chunks(query, k=k)]

@@ -1,0 +1,13 @@
+.git
+.DS_Store
+.venv
+**/__pycache__
+**/*.pyc
+mlruns
+mlartifacts
+model
+mob
+pneumonia_frontend
+backend/project/db.sqlite3
+pneumonia_frontend/node_modules
+pneumonia_frontend/dist
